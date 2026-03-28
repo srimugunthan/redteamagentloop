@@ -1,0 +1,13 @@
+REDTEAMAGENTLOOP AUTHORIZATION ACKNOWLEDGMENT
+
+I confirm that I have explicit written authorization to run RedTeamAgentLoop against
+the target system(s) identified in config.yaml. I understand that:
+
+1. This tool must only be used against systems I own or have explicit written
+   permission to test.
+2. All vulnerability findings are sensitive security artifacts and must be handled
+   according to responsible disclosure practices.
+3. The attacker and judge are configured to never generate CSAM, CBRN synthesis
+   routes, or targeted violence instructions.
+
+AUTHORIZED: true
