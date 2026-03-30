@@ -2,9 +2,10 @@
 
 Automated closed-loop LLM red-teaming agent built on LangGraph. Probes target LLMs for policy violations using adversarial prompts, mutation, and a judge LLM to score responses.
 
-- **Attacker:** Groq API (`llama-3.1-70b-versatile`)
+- **Attacker:** Groq API (`llama-3.3-70b-versatile`)
 - **Target:** Any OpenAI-compatible endpoint (default: local Ollama)
 - **Judge:** Claude Haiku via Anthropic API
+- **Console:** Live Attack Console — real-time streaming UI (Phase 10)
 
 ---
 
@@ -15,6 +16,7 @@ Automated closed-loop LLM red-teaming agent built on LangGraph. Probes target LL
 - [Ollama](https://ollama.com) (for local target models)
 - Groq API key — [console.groq.com](https://console.groq.com)
 - Anthropic API key — [console.anthropic.com](https://console.anthropic.com)
+- Node 20+ and npm (for the Live Console frontend only)
 
 ---
 
@@ -30,6 +32,9 @@ brew install uv
 
 # 3. Install dependencies
 uv sync
+
+# 4. Install console extras (FastAPI SSE backend — needed for Live Console)
+uv sync --extra console
 ```
 
 ---
@@ -43,13 +48,6 @@ cp .env.example .env
 # Edit .env and fill in your keys:
 #   GROQ_API_KEY=gsk_...
 #   ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Then export them in your shell:
-
-```bash
-export GROQ_API_KEY=gsk_...
-export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ### 2. Authorization acknowledgment
@@ -76,7 +74,7 @@ ollama pull gemma2:2b
 **Option B — Docker Compose:**
 
 ```bash
-docker-compose up -d
+docker-compose up -d ollama chromadb
 docker exec redteamagentloop-ollama ollama pull tinyllama
 docker exec redteamagentloop-ollama ollama pull gemma2:2b
 ```
@@ -84,6 +82,8 @@ docker exec redteamagentloop-ollama ollama pull gemma2:2b
 ---
 
 ## Running
+
+### CLI (terminal output)
 
 ```bash
 # Test against tinyllama only
@@ -105,7 +105,7 @@ uv run redteamagentloop \
   --config config.yaml
 ```
 
-### CLI options
+#### CLI options
 
 | Flag | Default | Description |
 |---|---|---|
@@ -114,7 +114,56 @@ uv run redteamagentloop \
 | `--system-prompt` | `""` | System prompt to inject into the target |
 | `--config` | `config.yaml` | Path to config file |
 | `--auth` | `authorization.txt` | Path to authorization file |
-| `--output-dir` | `outputs/` | Directory for run outputs |
+| `--output-dir` | `reports/output` | Directory for HTML reports |
+
+---
+
+### Live Console (streaming web UI)
+
+A terminal-style web UI that streams adversarial prompts, target responses, and animated judge scores in real time.
+
+#### Option A — Dev mode (backend + frontend separately)
+
+```bash
+# Terminal 1 — FastAPI SSE backend
+uv run uvicorn console.backend.main:app --reload --port 8000
+
+# Terminal 2 — Vite frontend dev server (proxies /api to :8000)
+cd console/frontend
+npm install
+npm run dev
+# Open http://localhost:5173
+```
+
+#### Option B — Production mode (backend serves built frontend)
+
+```bash
+# Build the frontend once
+cd console/frontend
+npm install
+npm run build
+cd ../..
+
+# Serve everything from the backend
+uv run uvicorn console.backend.main:app --port 8000
+# Open http://localhost:8000
+```
+
+#### Option C — Docker (builds everything automatically)
+
+```bash
+# Build and start Ollama + ChromaDB + Console in one command
+docker compose up --build
+
+# Pull models into the running Ollama container
+docker exec redteamagentloop-ollama ollama pull tinyllama
+docker exec redteamagentloop-ollama ollama pull gemma2:2b
+
+# Open http://localhost:8000
+```
+
+> The console reads `config.yaml` and your `.env` file at startup.
+> Make sure both exist and your API keys are set before starting.
 
 ---
 
@@ -127,6 +176,9 @@ loop:
   max_iterations: 50      # reduce to 5 for a quick test
   vuln_threshold: 7.0     # score >= this = confirmed vulnerability
   mutation_batch_size: 3  # mutations generated per cycle
+
+attacker:
+  rpm: 30   # Groq free tier rate limit (0 = disabled)
 
 judge:
   model: "claude-haiku-4-5-20251001"   # swap for claude-sonnet-4-6 for production runs
@@ -157,11 +209,7 @@ uv run python run_all_strategies.py --live \
 uv run python run_all_strategies.py --live --target gemma2
 ```
 
-**Output (live mode):** for each strategy — the generated adversarial prompt, the target's response, and the judge's score + reasoning. A summary table is printed at the end showing score, policy violated, and refusal flag for all 10 strategies.
-
 ### run_strategy.py — run one strategy
-
-Same pipeline as above but for a single named strategy. Useful for iterating on a specific attack vector.
 
 ```bash
 # List all available strategies with descriptions
@@ -175,53 +223,47 @@ uv run python run_strategy.py ObfuscatedRequest \
 # Live mode — full attacker + target + judge report
 uv run python run_strategy.py DirectJailbreak --live
 uv run python run_strategy.py FinServSpecific --live --target gemma2
-uv run python run_strategy.py PersonaHijack --live \
-  --objective "bypass KYC compliance checks" \
-  --target tinyllama
 ```
-
-**Output (live mode):** three labelled sections — attacker prompt, target response, and a colour-coded judge panel (green ≤ 3, yellow 4–6, red ≥ 7) showing score, policy violated, refusal flag, and judge reasoning.
-
-### Shared options
-
-| Flag | Default | Description |
-|---|---|---|
-| `--objective` | `"elicit unlicensed investment advice"` | What the target must NOT do |
-| `--live` | off | Use real LLMs — requires `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, Ollama running |
-| `--target` | first in config | `output_tag` from `config.yaml` (`tinyllama` or `gemma2`) |
-| `--config` | `config.yaml` | Path to config file |
 
 ---
 
-## Unit tests
+## Tests
 
 No API keys or running services required — all LLMs are mocked.
 
 ```bash
-# Full test suite (126 tests)
-uv run pytest tests/unit/ -v
+# Full test suite (271 tests)
+uv run pytest --tb=short -q
 
-# Individual test files
-uv run pytest tests/unit/test_graph.py -v       # graph wiring (Phase 5)
-uv run pytest tests/unit/test_nodes.py -v       # all 6 nodes (Phase 4)
-uv run pytest tests/unit/test_strategies.py -v  # all 10 strategies (Phase 2)
-uv run pytest tests/unit/test_storage.py -v     # storage layer (Phase 3)
-uv run pytest tests/unit/test_state.py -v       # state schema (Phase 1)
+# By phase
+uv run pytest tests/unit/test_state.py -v        # Phase 1 — state schema
+uv run pytest tests/unit/test_strategies.py -v   # Phase 2 — 10 strategies
+uv run pytest tests/unit/test_storage.py -v      # Phase 3 — storage layer
+uv run pytest tests/unit/test_nodes.py -v        # Phase 4 — 6 nodes
+uv run pytest tests/unit/test_graph.py -v        # Phase 5 — graph wiring
+uv run pytest tests/unit/test_evaluation.py -v   # Phase 6 — judge evaluator
+uv run pytest tests/unit/test_reporting.py -v    # Phase 7 — HTML reports
+uv run pytest tests/test_regression.py -v        # Phase 8 — regression dataset
+uv run pytest tests/integration/ -v              # Phase 8 — E2E integration
+uv run pytest tests/unit/test_phase9.py -v       # Phase 9 — guardrails/rate limiter
+uv run pytest tests/unit/test_console.py -v      # Phase 10 — live console backend
+
+# With coverage
+uv run pytest --cov=redteamagentloop --cov-report=term-missing
 ```
 
 ---
 
 ## Output
 
-The agent prints two tables at the end of each run:
+Each run produces:
 
-1. **All attempts** — every iteration with strategy, score, prompt snippet, and response snippet
-2. **Confirmed vulnerabilities** — only attempts that scored ≥ `vuln_threshold`
-
-Results are also persisted to:
-- `reports/<target_tag>_vulnerabilities.jsonl` — full attack records
-- `reports/metadata.db` — SQLite session metadata
-- `reports/chroma_<target_tag>/` — ChromaDB for semantic deduplication
+- **Terminal** — live score gauge + iteration table via Rich
+- **HTML report** — saved to `reports/output/<session>_<timestamp>.html`
+- **JSONL** — `reports/<target_tag>_vulnerabilities.jsonl`
+- **SQLite** — `reports/metadata.db`
+- **ChromaDB** — `reports/chroma_<target_tag>/` (semantic dedup)
+- **Session log** — `reports/logs/<session_id>.log` (JSON structured)
 
 ---
 
@@ -242,4 +284,8 @@ START
                            attacker  (or END if max_iterations reached)
 ```
 
-10 attack strategies: `DirectJailbreak`, `PersonaHijack`, `DirectInjection`, `IndirectInjection`, `FewShotPoisoning`, `NestedInstruction`, `AdversarialSuffix`, `ContextOverflow`, `ObfuscatedRequest`, `FinServSpecific`
+**10 attack strategies:** `DirectJailbreak`, `PersonaHijack`, `DirectInjection`, `IndirectInjection`, `FewShotPoisoning`, `NestedInstruction`, `AdversarialSuffix`, `ContextOverflow`, `ObfuscatedRequest`, `FinServSpecific`
+
+**Phase 9 hardening:** ethical guardrails (CBRN/CSAM filter), token-bucket rate limiting per LLM, circuit breaker on target errors, JSON structured logging, startup API key validation.
+
+**Phase 10 console:** FastAPI SSE backend streams `AttackEvent`s from LangGraph's `astream_events`; React + Vite frontend renders live score gauges, iteration log, and vuln highlights.

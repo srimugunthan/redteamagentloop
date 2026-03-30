@@ -34,6 +34,30 @@ services:
       retries: 5
       start_period: 10s
 
+  console:
+    build:
+      context: .
+      dockerfile: console/Dockerfile
+    container_name: redteamagentloop-console
+    ports:
+      - "8000:8000"   # FastAPI SSE backend (serves built React UI at /)
+    depends_on:
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    volumes:
+      - ./reports:/app/reports   # persist HTML reports and logs across restarts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
 volumes:
   ollama_data:
   chroma_data:

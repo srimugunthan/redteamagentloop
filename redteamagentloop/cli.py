@@ -5,11 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 
+from dotenv import load_dotenv
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
 
-from redteamagentloop.config import check_authorization, load_config
+from redteamagentloop.config import check_api_keys, check_authorization, load_config
 
 console = Console()
 
@@ -19,82 +18,104 @@ async def _run_target(
     initial_state,
     app_config,
     target,
+    output_dir: str,
 ) -> None:
-    """Run the graph against a single target and print a summary."""
+    """Run the graph against a single target, persist results, and save report."""
+    from rich.panel import Panel
+    from redteamagentloop.ratelimit import RateLimiter
+    from redteamagentloop.storage.manager import StorageManager
+    from reports.report_generator import ReportGenerator
+    from reports.terminal_dashboard import TerminalDashboard
+
     console.print(Panel(
         f"[bold cyan]Target:[/bold cyan] {target.model} ({target.output_tag})\n"
         f"[bold cyan]Objective:[/bold cyan] {initial_state['target_objective']}",
         title="RedTeamAgentLoop — starting run",
     ))
 
-    final_state = await graph.ainvoke(
-        initial_state,
-        config={"configurable": {"app_config": app_config}},
+    storage_cfg = app_config.storage
+    storage = StorageManager(
+        jsonl_path=storage_cfg.jsonl_path.replace("{target_tag}", target.output_tag),
+        sqlite_path=storage_cfg.sqlite_path,
+        chromadb_path=storage_cfg.chromadb_path.replace("{target_tag}", target.output_tag),
+        embedding_model=storage_cfg.embedding_model,
+        dedup_threshold=storage_cfg.dedup_threshold,
     )
+
+    dashboard = TerminalDashboard(
+        objective=initial_state["target_objective"],
+        target=target.model,
+        vuln_threshold=app_config.loop.vuln_threshold,
+    )
+
+    # Build per-run rate limiters (0 rpm = disabled).
+    attacker_rate_limiter = RateLimiter(app_config.attacker.rpm)
+    target_rate_limiter = RateLimiter(target.rpm)
+    judge_rate_limiter = RateLimiter(app_config.judge.rpm)
+
+    run_config = {"configurable": {
+        "app_config": app_config,
+        "attacker_rate_limiter": attacker_rate_limiter,
+        "target_rate_limiter": target_rate_limiter,
+        "judge_rate_limiter": judge_rate_limiter,
+    }}
+
+    # Stream the graph so the dashboard updates live after each iteration.
+    # astream(stream_mode="values") yields the full merged state after every node;
+    # the Live context must be active for dashboard.update() to render anything.
+    final_state = {}
+    displayed = 0
+    with dashboard.live_context():
+        async for state in graph.astream(initial_state, config=run_config, stream_mode="values"):
+            final_state = state
+            history_so_far = state.get("attack_history", [])
+            while displayed < len(history_so_far):
+                dashboard.update(history_so_far[displayed])
+                displayed += 1
 
     successes = final_state.get("successful_attacks", [])
     history = final_state.get("attack_history", [])
     iterations = final_state.get("iteration_count", 0)
-    error = final_state.get("error")
 
-    # All attempts table
-    all_table = Table(title=f"All attempts — {target.output_tag}", show_lines=False)
-    all_table.add_column("#", style="dim", width=4)
-    all_table.add_column("Strategy", width=22)
-    all_table.add_column("Score", justify="right", width=6)
-    all_table.add_column("Prompt (truncated)")
-    all_table.add_column("Response (truncated)")
-
-    for rec in history:
-        score = rec["score"]
-        score_str = f"[bold red]{score:.1f}[/bold red]" if score >= final_state.get("vuln_threshold", 7.0) else f"{score:.1f}"
-        all_table.add_row(
-            str(rec["iteration"]),
-            rec["strategy"],
-            score_str,
-            rec["prompt"][:60],
-            rec["response"][:80],
-        )
-
-    console.print(all_table)
-
-    # Vulnerabilities-only table
-    vuln_table = Table(title=f"[bold red]Confirmed vulnerabilities — {target.output_tag}[/bold red]")
-    vuln_table.add_column("Iteration", style="dim")
-    vuln_table.add_column("Strategy")
-    vuln_table.add_column("Score", justify="right")
-    vuln_table.add_column("Prompt (truncated)")
-
+    # Persist successful attacks to storage
     for rec in successes:
-        vuln_table.add_row(
-            str(rec["iteration"]),
-            rec["strategy"],
-            f"[bold red]{rec['score']:.1f}[/bold red]",
-            rec["prompt"][:80],
-        )
+        await storage.log_attack(rec)
 
-    console.print(vuln_table)
+    dashboard.print_final_summary(final_state)
 
-    status = f"[yellow]{error}[/yellow]" if error else "[green]completed[/green]"
-    console.print(
-        f"[bold]Status:[/bold] {status}  "
-        f"[bold]Iterations:[/bold] {iterations}  "
-        f"[bold]Vulnerabilities found:[/bold] {len(successes)}"
+    # Generate HTML report
+    generator = ReportGenerator()
+    report = generator.load_session_data(
+        session_id=initial_state["session_id"],
+        attack_history=history,
+        successful_attacks=successes,
+        target_model=target.model,
+        objective=initial_state["target_objective"],
+        vuln_threshold=app_config.loop.vuln_threshold,
+        total_iterations=iterations,
     )
+    report_path = generator.save(report, output_dir)
+    console.print(f"[dim]Report saved → {report_path}[/dim]")
 
 
 def main() -> None:
+    # Load .env before parsing config so GROQ_API_KEY / ANTHROPIC_API_KEY are set.
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="RedTeamAgentLoop — LLM red teaming agent")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--objective", required=True, help="Red team objective (what the target should NOT do)")
     parser.add_argument("--system-prompt", default="", help="System prompt to use for the target LLM")
     parser.add_argument("--target", default=None, help="output_tag of the target to test (default: all targets)")
-    parser.add_argument("--output-dir", default="outputs/", help="Directory for run outputs")
+    parser.add_argument("--output-dir", default="reports/output", help="Directory for HTML reports")
     parser.add_argument("--auth", default="authorization.txt", help="Path to authorization.txt")
     args = parser.parse_args()
 
     check_authorization(args.auth)
     app_config = load_config(args.config)
+
+    # Fail fast if required API keys are missing — before any LLM node runs.
+    check_api_keys(app_config)
 
     from redteamagentloop.agent.graph import build_graph, build_initial_state
 
@@ -115,7 +136,7 @@ def main() -> None:
                 target_objective=args.objective,
                 target_system_prompt=args.system_prompt or target.system_prompt,
             )
-            await _run_target(graph, initial_state, app_config, target)
+            await _run_target(graph, initial_state, app_config, target, args.output_dir)
 
     asyncio.run(run_all())
 

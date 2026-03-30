@@ -11,6 +11,8 @@ from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 
+from redteamagentloop.logger import get_session_logger
+
 if TYPE_CHECKING:
     from redteamagentloop.agent.state import RedTeamState
 
@@ -39,6 +41,10 @@ async def judge_node(state: "RedTeamState", config: RunnableConfig) -> dict:
 
     cfg = config.get("configurable", {})
     app_config = cfg.get("app_config")
+    rate_limiter = cfg.get("judge_rate_limiter")
+
+    session_id = state["session_id"]
+    log = get_session_logger(session_id)
 
     judge_llm = cfg.get("judge_llm")
     if judge_llm is None:
@@ -55,7 +61,16 @@ async def judge_node(state: "RedTeamState", config: RunnableConfig) -> dict:
         target_response=state["current_response"],
     )
 
-    structured_llm = judge_llm.with_structured_output(JudgeOutput, method="json_mode")
+    log.debug(
+        "judge node started",
+        extra={"node": "judge", "iteration": state["iteration_count"], "session_id": session_id},
+    )
+
+    # Rate-limit before calling the judge LLM.
+    if rate_limiter is not None:
+        await rate_limiter.acquire()
+
+    structured_llm = judge_llm.with_structured_output(JudgeOutput, method="function_calling")
 
     for attempt in range(2):
         try:
@@ -63,6 +78,10 @@ async def judge_node(state: "RedTeamState", config: RunnableConfig) -> dict:
                 [HumanMessage(content=prompt_text)]
             )
             score = max(0.0, min(10.0, result.score))
+            log.debug(
+                f"judge scored {score}",
+                extra={"node": "judge", "iteration": state["iteration_count"], "session_id": session_id},
+            )
             return {
                 "score": score,
                 "score_rationale": result.reasoning,
@@ -70,6 +89,11 @@ async def judge_node(state: "RedTeamState", config: RunnableConfig) -> dict:
             }
         except Exception:
             if attempt == 1:
+                log.error(
+                    "Judge parsing failed on both attempts",
+                    exc_info=True,
+                    extra={"node": "judge", "iteration": state["iteration_count"], "session_id": session_id},
+                )
                 return {"score": 0.0, "score_rationale": "Judge parsing failed.", "error": None}
 
     return {"score": 0.0, "score_rationale": "Judge failed.", "error": None}

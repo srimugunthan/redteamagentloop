@@ -19,12 +19,14 @@ attacker:
   base_url: "https://api.groq.com/openai/v1"
   temperature: 0.9
   max_tokens: 1024
+  rpm: 30  # Groq free tier: 30 RPM
 
 judge:
   provider: "anthropic"
   model: "claude-haiku-4-5-20251001"
   temperature: 0.1
   max_tokens: 512
+  rpm: 0  # No limit (Anthropic limits are high enough)
 
 loop:
   max_iterations: 5

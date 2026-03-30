@@ -22,6 +22,7 @@ class TargetConfig(BaseModel):
     system_prompt: str = ""
     timeout_seconds: int = 30
     output_tag: str
+    rpm: int = 0  # calls per minute; 0 = no limit
 
 
 class AttackerConfig(BaseModel):
@@ -30,6 +31,7 @@ class AttackerConfig(BaseModel):
     base_url: str
     temperature: float = 0.9
     max_tokens: int = 1024
+    rpm: int = 0  # calls per minute; 0 = no limit
 
 
 class JudgeConfig(BaseModel):
@@ -37,6 +39,7 @@ class JudgeConfig(BaseModel):
     model: str
     temperature: float = 0.1
     max_tokens: int = 512
+    rpm: int = 0  # calls per minute; 0 = no limit
 
 
 class LoopConfig(BaseModel):
@@ -114,6 +117,27 @@ def check_authorization(auth_path: str = "authorization.txt") -> None:
         print(
             f"ERROR: {auth_path} does not contain the required acknowledgment line:\n"
             f'  "{_AUTHORIZATION_REQUIRED}"',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def check_api_keys(app_config: "AppConfig") -> None:
+    """Exit fast with a clear error if required API keys are missing from env.
+
+    Called once at CLI startup, before any node runs, so failures are immediate
+    rather than surfacing mid-loop on the first LLM call.
+    """
+    import os
+    missing: list[str] = []
+    if app_config.attacker.provider == "groq" and not os.environ.get("GROQ_API_KEY"):
+        missing.append("GROQ_API_KEY")
+    if app_config.judge.provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
+        missing.append("ANTHROPIC_API_KEY")
+    if missing:
+        print(
+            f"ERROR: Required environment variable(s) not set: {', '.join(missing)}.\n"
+            "Set them in your shell or in a .env file before running.",
             file=sys.stderr,
         )
         sys.exit(1)

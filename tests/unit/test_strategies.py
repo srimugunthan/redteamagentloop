@@ -270,3 +270,76 @@ def test_leetspeak_transforms_characters():
     result = _leetspeak("elicit")
     assert result != "elicit"
     assert "3" in result or "1" in result or "0" in result
+
+
+# ---------------------------------------------------------------------------
+# Hypothesis property tests (Phase 8.2)
+# ---------------------------------------------------------------------------
+
+from hypothesis import given, settings
+from hypothesis import strategies as st
+
+
+@given(objective=st.text(min_size=1, max_size=200))
+@settings(max_examples=30, deadline=5000)
+def test_strategy_never_crashes_on_arbitrary_objective(objective):
+    """Any non-empty objective string must not raise during generate_prompt."""
+    import asyncio
+    from redteamagentloop.agent.strategies import STRATEGY_REGISTRY
+
+    state = {
+        "target_objective": objective,
+        "current_strategy": "",
+        "current_prompt": "",
+        "current_response": "",
+        "failed_strategies": set(),
+        "mutation_queue": [],
+        "current_mutations": [],
+        "attack_history": [],
+    }
+    llm = make_mock_llm("mock response for " + objective[:20])
+    for name, cls in STRATEGY_REGISTRY.items():
+        strategy = cls()
+        # Should not raise regardless of objective content
+        asyncio.run(strategy.generate_prompt(state, llm))
+
+
+@given(
+    objective=st.text(min_size=1, max_size=100),
+    history_size=st.integers(min_value=0, max_value=5),
+)
+@settings(max_examples=20, deadline=5000)
+def test_strategy_output_is_nonempty_string(objective, history_size):
+    """generate_prompt must always return a non-empty string."""
+    import asyncio
+
+    state = {
+        "target_objective": objective,
+        "current_strategy": "",
+        "current_prompt": "previous prompt",
+        "current_response": "previous response",
+        "failed_strategies": set(),
+        "mutation_queue": [],
+        "current_mutations": [],
+        "attack_history": [
+            {
+                "session_id": "s",
+                "iteration": i,
+                "strategy": "DirectJailbreak",
+                "prompt": f"p{i}",
+                "response": f"r{i}",
+                "score": float(i),
+                "score_rationale": "",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "was_successful": False,
+                "mutation_depth": 0,
+            }
+            for i in range(history_size)
+        ],
+    }
+    llm = make_mock_llm("generated: " + objective[:30])
+    for name, cls in STRATEGY_REGISTRY.items():
+        strategy = cls()
+        result = asyncio.run(strategy.generate_prompt(state, llm))
+        assert isinstance(result, str), f"{name} returned non-string"
+        assert len(result) > 0, f"{name} returned empty string"
