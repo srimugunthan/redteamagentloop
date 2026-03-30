@@ -3,9 +3,15 @@
 Automated closed-loop LLM red-teaming agent built on LangGraph. Probes target LLMs for policy violations using adversarial prompts, mutation, and a judge LLM to score responses.
 
 - **Attacker:** Groq API (`llama-3.3-70b-versatile`)
-- **Target:** Any OpenAI-compatible endpoint (default: local Ollama)
+- **Target:** Any OpenAI-compatible endpoint (default: local tinyLLama model using Ollama)
 - **Judge:** Claude Haiku via Anthropic API
 - **Console:** Live Attack Console — real-time streaming UI (Phase 10)
+---
+## Demo
+
+
+https://github.com/user-attachments/assets/6b32ad20-0d6b-4d03-b7cf-62d2e6c2e81f
+
 
 ---
 
