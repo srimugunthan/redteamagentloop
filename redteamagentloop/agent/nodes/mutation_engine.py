@@ -109,4 +109,5 @@ async def mutation_engine_node(state: "RedTeamState", config: RunnableConfig) ->
     return {
         "mutation_queue": updated_queue,
         "current_mutations": new_mutations,
+        "strategy_mutation_count": state.get("strategy_mutation_count", 0) + 1,
     }

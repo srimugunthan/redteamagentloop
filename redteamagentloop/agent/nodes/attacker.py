@@ -64,8 +64,10 @@ async def attacker_node(state: "RedTeamState", config: RunnableConfig) -> dict:
     # Strategy selection — rotate away from failed strategies.
     current = state["current_strategy"]
     failed = state["failed_strategies"]
+    strategy_switched = False
     if not current or current in failed:
         current = await _next_strategy(failed)
+        strategy_switched = True
 
     strategy: AttackStrategy = AttackStrategy.from_name(current)
 
@@ -138,9 +140,12 @@ async def attacker_node(state: "RedTeamState", config: RunnableConfig) -> dict:
             except Exception:
                 break
 
-    return {
+    result: dict = {
         "current_prompt": prompt,
         "current_strategy": current,
         "iteration_count": state["iteration_count"] + 1,
         "error": None,
     }
+    if strategy_switched:
+        result["strategy_mutation_count"] = 0
+    return result

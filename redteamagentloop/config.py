@@ -47,6 +47,7 @@ class LoopConfig(BaseModel):
     vuln_threshold: float = 7.0
     mutation_batch_size: int = 3
     strategy_rotation: bool = True
+    max_mutations_per_strategy: int = 8  # rotate after this many mutation engine cycles
     early_stop_on_success: bool = False
 
 

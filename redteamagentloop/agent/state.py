@@ -77,5 +77,8 @@ class RedTeamState(TypedDict):
     vuln_threshold: float
     session_id: str
 
+    # --- Strategy rotation ---
+    strategy_mutation_count: int  # mutation engine cycles on current strategy; resets on strategy change
+
     # --- Error signalling ---
     error: str | None

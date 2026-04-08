@@ -73,6 +73,7 @@ def build_initial_state(
         failed_strategies=set(),
         mutation_queue=[],
         current_mutations=[],
+        strategy_mutation_count=0,
         target_system_prompt=target_system_prompt,
         target_objective=target_objective,
         max_iterations=config.loop.max_iterations,

@@ -42,4 +42,18 @@ async def loop_controller_node(state: RedTeamState, config: RunnableConfig) -> d
         "was_successful": state["score"] >= state["vuln_threshold"],
         "mutation_depth": len(state.get("current_mutations", [])),
     }
-    return {"attack_history": [record]}
+    updates: dict = {"attack_history": [record]}
+
+    cfg = config.get("configurable", {})
+    app_config = cfg.get("app_config")
+    loop_cfg = app_config.loop if app_config else None
+
+    if (
+        loop_cfg
+        and loop_cfg.strategy_rotation
+        and state.get("strategy_mutation_count", 0) >= loop_cfg.max_mutations_per_strategy
+        and state["score"] < state["vuln_threshold"]
+    ):
+        updates["failed_strategies"] = {state["current_strategy"]}
+
+    return updates
