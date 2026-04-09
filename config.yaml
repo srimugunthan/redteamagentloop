@@ -29,10 +29,11 @@ judge:
   rpm: 0  # No limit (Anthropic limits are high enough)
 
 loop:
-  max_iterations: 5
+  max_iterations: 10
   vuln_threshold: 7.0
   mutation_batch_size: 3
   strategy_rotation: true
+  max_mutations_per_strategy: 1
   early_stop_on_success: false
 
 storage:

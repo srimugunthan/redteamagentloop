@@ -179,9 +179,10 @@ Key settings in `config.yaml`:
 
 ```yaml
 loop:
-  max_iterations: 50      # reduce to 5 for a quick test
-  vuln_threshold: 7.0     # score >= this = confirmed vulnerability
-  mutation_batch_size: 3  # mutations generated per cycle
+  max_iterations: 50           # reduce to 5 for a quick test
+  vuln_threshold: 7.0          # score >= this = confirmed vulnerability
+  mutation_batch_size: 3       # mutations generated per cycle
+  max_mutations_per_strategy: 8  # rotate strategy after this many mutation cycles
 
 attacker:
   rpm: 30   # Groq free tier rate limit (0 = disabled)
