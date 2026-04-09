@@ -135,3 +135,40 @@ Exit code: `0` if MAE ≤ 1.5, `1` otherwise (usable as a CI gate).
 | Mutation engine node | `redteamagentloop/agent/nodes/mutation_engine.py` |
 | Report generator | `reports/report_generator.py` |
 | Report template | `reports/templates/report.html.j2` |
+
+---
+
+## Node Graph with Conditional Edges
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │                                         │
+                    ▼                                         │
+START ──► attacker ──► target_caller ──► judge ──► loop_controller
+              ▲                                        │
+              │                               route_after_judge()
+              │                                [CONDITIONAL]
+              │                                        │
+              │             ┌──────────────────────────┤
+              │             │              │            │
+              │        error/max    score>=threshold  queue
+              │        iterations         │            empty
+              │             │             ▼            │
+              │            END       vuln_logger        │
+              │                           │             │
+              │                           ▼             ▼
+              └───────────────────── mutation_engine ◄──┘
+```
+
+`loop_controller` is the **only node with a conditional outbound edge**, via `route_after_judge()` in
+`redteamagentloop/agent/nodes/loop_controller.py:12`.
+
+| Condition | Destination |
+|---|---|
+| `error` set or `iteration_count >= max_iterations` | `END` |
+| `score >= vuln_threshold` | `vuln_logger` |
+| `mutation_queue` has items | `attacker` |
+| `mutation_queue` is empty | `mutation_engine` |
+
+All other edges are unconditional:
+`attacker → target_caller → judge → loop_controller`, `vuln_logger → mutation_engine`, `mutation_engine → attacker`.
