@@ -4,6 +4,19 @@
 
 ---
 
+## The Full Comparison
+
+| Dimension | promptfoo | PyRIT | garak | DeepTeam | **RedTeamAgentLoop** |
+|---|---|---|---|---|---|
+| **Attack auto-gen** | Hybrid | Full (attacker LLM) | Static corpus | Full (LLM synthesizer) | **Full (Groq attacker LLM)** |
+| **Mutation / adaptation** | None | Limited (converters) | Static only | Multi-turn progression | **Dedicated mutation node in graph** |
+| **Closed feedback loop** | No | Partial (orchestrators) | No | Partial | **Yes — native LangGraph loop** |
+| **Attack breadth** | High (plugin system) | High (composable) | Highest (150+ probes) | High (50+ vulns) | **Moderate (10 strategies)** |
+| **Domain specificity** | Generic | Generic | Generic | Generic | **FinServ-specific strategy built in** |
+| **Local model support** | Limited | Limited | Yes (HuggingFace) | Yes (Ollama) | **Yes (Ollama first-class)** |
+
+---
+
 ## Coverage Map
 
 | Strategy | Family | OWASP LLM Top 10 | MITRE ATLAS | NIST AI RMF |
@@ -56,30 +69,37 @@ ATLAS is the most technically grounded of the three. AML.T0043 (craft adversaria
 
 ---
 
-## Critical Gaps — What No Framework Covers
+## Critical Gaps 
 
-### 1. GCG / Gradient-Based Token Attacks
+### 1. No RAG Pipeline Targeting
+No framework explicitly covers retrieval-augmented generation as a distinct attack surface. Garak's latent injection probes and promptfoo's RAG-specific plugins test retrieval pipelines specifically. RedTeamAgentLoop probes any OpenAI-compatible endpoint, which means RAG-specific attack surfaces (context stuffing, malicious document injection) aren't first-class citizens yet.
+
+### 2. Attack Breadth Gap
+10 strategies vs. garak's 150+ probes and DeepTeam's 50+ vulnerability types means RedTeamAgentLoop covers a narrower threat surface. For broad-spectrum baseline scanning of an unknown model, running garak first remains the better choice. RedTeamAgentLoop's advantage is depth and adaptivity on a targeted objective, not breadth of coverage.
+
+## — What No Framework Covers
+### 3. GCG / Gradient-Based Token Attacks
 OWASP LLM Top 10 does not treat adversarial suffix optimization (GCG, AutoDAN) as a first-class threat. NIST AI RMF has no technical countermeasure guidance. Only MITRE ATLAS AML.T0043 covers it, but without finserv-specific threat scenarios.
 
-### 2. Encoding / Obfuscation Variants
+### 4. Encoding / Obfuscation Variants
 Base64, ROT13, leetspeak encoding are not explicitly enumerated in any framework as distinct attack vectors. They collapse into generic "prompt injection" which understates the bypass risk.
 
-### 3. Context Window Flooding
+### 5. Context Window Flooding
 No framework has a dedicated control or mitigation for **attention dilution via context overflow**. OWASP LLM04 (data poisoning) is the closest but addresses training-time, not inference-time context manipulation.
 
-### 4. In-Context Few-Shot Poisoning
+### 6. In-Context Few-Shot Poisoning
 MITRE ATLAS AML.T0047 captures this best, but OWASP and NIST provide no controls. The fabricated-example-as-norm-setter attack is underspecified across all frameworks.
 
-### 5. FinServ Domain-Specific Attacks ⚠️
+### 7. FinServ Domain-Specific Attacks ⚠️
 **KYC bypass, MNPI leakage, suitability override, and unlicensed advice** are completely absent from OWASP, NIST AI RMF, and MITRE ATLAS. No framework maps regulatory compliance violations as an LLM attack surface. This is the strongest competitive differentiation for red teamers in financial services.
 
-### 6. Agentic / Multi-Turn Attack Chaining
+### 8. Agentic / Multi-Turn Attack Chaining
 No framework covers multi-step attack orchestration where early turns set up later exploitation (e.g., persona priming → indirect injection → tool misuse). All frameworks treat attacks as **single-turn events**.
 
-### 7. Memory and State Persistence Attacks
+### 9. Memory and State Persistence Attacks
 Long-term memory poisoning in agentic systems (e.g., injecting into vector stores for future RAG retrieval) is absent from OWASP LLM02's scope and entirely missing from NIST and ATLAS.
 
-### 8. Multimodal Injection Vectors
+### 10. Multimodal Injection Vectors
 Image, audio, and document-embedded instruction injection is not explicitly covered. OWASP LLM02 gestures at document content but without multimodal specificity.
 
 ---
