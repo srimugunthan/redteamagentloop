@@ -22,10 +22,11 @@ async def _run_target(
 ) -> None:
     """Run the graph against a single target, persist results, and save report."""
     from rich.panel import Panel
+    from redteamagentloop.llm_factory import build_attacker_llm, build_judge_llm, build_target_llm
     from redteamagentloop.ratelimit import RateLimiter
     from redteamagentloop.storage.manager import StorageManager
-    from reports.report_generator import ReportGenerator
-    from reports.terminal_dashboard import TerminalDashboard
+    from redteamagentloop.report_generator import ReportGenerator
+    from redteamagentloop.terminal_dashboard import TerminalDashboard
 
     console.print(Panel(
         f"[bold cyan]Target:[/bold cyan] {target.model} ({target.output_tag})\n"
@@ -48,6 +49,11 @@ async def _run_target(
         vuln_threshold=app_config.loop.vuln_threshold,
     )
 
+    # Build LLMs once and inject — nodes use these rather than constructing inline.
+    attacker_llm = build_attacker_llm(app_config)
+    target_llm = build_target_llm(target)
+    judge_llm = build_judge_llm(app_config)
+
     # Build per-run rate limiters (0 rpm = disabled).
     attacker_rate_limiter = RateLimiter(app_config.attacker.rpm)
     target_rate_limiter = RateLimiter(target.rpm)
@@ -55,6 +61,9 @@ async def _run_target(
 
     run_config = {"configurable": {
         "app_config": app_config,
+        "attacker_llm": attacker_llm,
+        "target_llm": target_llm,
+        "judge_llm": judge_llm,
         "attacker_rate_limiter": attacker_rate_limiter,
         "target_rate_limiter": target_rate_limiter,
         "judge_rate_limiter": judge_rate_limiter,

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -27,7 +26,7 @@ from rich.panel import Panel
 
 console = Console()
 
-_TEMPLATE_PATH = Path(__file__).parent / "prompts" / "judge_template.j2"
+_TEMPLATE_PATH = Path(__file__).parent.parent / "redteamagentloop" / "prompts" / "judge_template.j2"
 _JUDGE_TEMPLATE: Template = Template(_TEMPLATE_PATH.read_text())
 
 
@@ -44,42 +43,24 @@ def make_mock_attacker() -> MagicMock:
 
 
 def make_real_attacker(config) -> object:
-    from langchain_openai import ChatOpenAI
-    ac = config.attacker
-    return ChatOpenAI(
-        model=ac.model,
-        base_url=ac.base_url,
-        api_key=os.environ["GROQ_API_KEY"],
-        temperature=ac.temperature,
-        max_tokens=ac.max_tokens,
-    )
+    from redteamagentloop.llm_factory import build_attacker_llm
+    return build_attacker_llm(config)
 
 
 def make_real_target(config, target_tag: str | None):
-    from langchain_openai import ChatOpenAI
+    from redteamagentloop.llm_factory import build_target_llm
     targets = config.targets
     if target_tag:
         matches = [t for t in targets if t.output_tag == target_tag]
         tc = matches[0] if matches else targets[0]
     else:
         tc = targets[0]
-    return ChatOpenAI(
-        model=tc.model,
-        base_url=tc.base_url,
-        api_key=tc.api_key,
-        timeout=tc.timeout_seconds,
-        temperature=0.0,
-    ), tc
+    return build_target_llm(tc), tc
 
 
 def make_real_judge(config) -> object:
-    from langchain_anthropic import ChatAnthropic
-    jc = config.judge
-    return ChatAnthropic(
-        model=jc.model,
-        temperature=jc.temperature,
-        max_tokens=jc.max_tokens,
-    )
+    from redteamagentloop.llm_factory import build_judge_llm
+    return build_judge_llm(config)
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from jinja2 import Template
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
@@ -17,7 +16,7 @@ if TYPE_CHECKING:
     from redteamagentloop.agent.state import RedTeamState
 
 # Load template once at module level.
-_TEMPLATE_PATH = Path(__file__).parent.parent.parent.parent / "prompts" / "judge_template.j2"
+_TEMPLATE_PATH = Path(__file__).parent.parent.parent / "prompts" / "judge_template.j2"
 _JUDGE_TEMPLATE: Template = Template(_TEMPLATE_PATH.read_text())
 
 
@@ -48,12 +47,8 @@ async def judge_node(state: "RedTeamState", config: RunnableConfig) -> dict:
 
     judge_llm = cfg.get("judge_llm")
     if judge_llm is None:
-        jc = app_config.judge
-        judge_llm = ChatAnthropic(
-            model=jc.model,
-            temperature=jc.temperature,
-            max_tokens=jc.max_tokens,
-        )
+        from redteamagentloop.llm_factory import build_judge_llm
+        judge_llm = build_judge_llm(app_config)
 
     prompt_text = _JUDGE_TEMPLATE.render(
         target_objective=state["target_objective"],
@@ -70,7 +65,7 @@ async def judge_node(state: "RedTeamState", config: RunnableConfig) -> dict:
     if rate_limiter is not None:
         await rate_limiter.acquire()
 
-    structured_llm = judge_llm.with_structured_output(JudgeOutput, method="function_calling")
+    structured_llm = judge_llm.with_structured_output(JudgeOutput, method="json_mode")
 
     for attempt in range(2):
         try:

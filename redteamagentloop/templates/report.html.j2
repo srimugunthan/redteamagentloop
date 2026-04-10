@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RedTeamAgentLoop Report — {{ session.session_id[:8] }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+    h1 { font-size: 1.6rem; font-weight: 700; color: #f8fafc; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.1rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; margin: 2rem 0 1rem; }
+    .subtitle { color: #64748b; font-size: 0.9rem; margin-bottom: 2rem; }
+    .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+    .badge-red { background: #7f1d1d; color: #fca5a5; }
+    .badge-yellow { background: #713f12; color: #fde68a; }
+    .badge-green { background: #14532d; color: #86efac; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1rem; }
+    .stat-card .value { font-size: 2rem; font-weight: 700; color: #f8fafc; }
+    .stat-card .label { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }
+    .chart-wrap { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 2rem; max-height: 280px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th { background: #1e293b; color: #94a3b8; font-weight: 600; text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid #334155; }
+    td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #1e293b; vertical-align: top; word-break: break-word; }
+    tr:hover td { background: #1e293b; }
+    .score-high { color: #f87171; font-weight: 700; }
+    .score-mid  { color: #fbbf24; }
+    .score-low  { color: #34d399; }
+    .mono { font-family: "SF Mono", "Fira Code", monospace; font-size: 0.8rem; }
+    .truncate { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .section-wrap { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; overflow: hidden; margin-bottom: 2rem; }
+    .empty-state { color: #475569; text-align: center; padding: 2rem; font-style: italic; }
+    .eval-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #334155; color: #475569; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <h1>RedTeamAgentLoop — Session Report</h1>
+  <p class="subtitle">
+    Session <span class="mono">{{ session.session_id }}</span> &nbsp;·&nbsp;
+    {{ session.generated_at }} &nbsp;·&nbsp;
+    Target: <strong>{{ session.target_model }}</strong>
+  </p>
+
+  <!-- Summary cards -->
+  <div class="summary-grid">
+    <div class="stat-card">
+      <div class="value">{{ session.total_iterations }}</div>
+      <div class="label">Iterations run</div>
+    </div>
+    <div class="stat-card">
+      <div class="value {% if session.vulnerabilities_found > 0 %}score-high{% else %}score-low{% endif %}">
+        {{ session.vulnerabilities_found }}
+      </div>
+      <div class="label">Vulnerabilities found</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">{{ session.strategies_tested }}</div>
+      <div class="label">Strategies tested</div>
+    </div>
+    <div class="stat-card">
+      <div class="value {% if session.max_score >= 7.0 %}score-high{% elif session.max_score >= 4.0 %}score-mid{% else %}score-low{% endif %}">
+        {{ "%.1f"|format(session.max_score) }}
+      </div>
+      <div class="label">Highest score</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">{{ "%.1f"|format(session.avg_score) }}</div>
+      <div class="label">Average score</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">{{ session.objective[:30] }}{% if session.objective|length > 30 %}…{% endif %}</div>
+      <div class="label">Objective</div>
+    </div>
+  </div>
+
+  <!-- Strategy performance chart -->
+  <h2>Strategy performance</h2>
+  <div class="chart-wrap">
+    <canvas id="strategyChart"></canvas>
+  </div>
+
+  <!-- Confirmed vulnerabilities -->
+  <h2>Confirmed vulnerabilities (score ≥ {{ session.vuln_threshold }})</h2>
+  {% if session.successful_attacks %}
+  <div class="section-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Iter</th>
+          <th>Strategy</th>
+          <th>Score</th>
+          <th>Prompt</th>
+          <th>Response</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rec in session.successful_attacks %}
+        <tr>
+          <td class="mono">{{ loop.index }}</td>
+          <td class="mono">{{ rec.iteration }}</td>
+          <td>{{ rec.strategy }}</td>
+          <td class="score-high mono">{{ "%.1f"|format(rec.score) }}</td>
+          <td class="truncate mono">{{ rec.prompt[:120] }}{% if rec.prompt|length > 120 %}…{% endif %}</td>
+          <td class="truncate mono">{{ rec.response[:120] }}{% if rec.response|length > 120 %}…{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="section-wrap"><p class="empty-state">No confirmed vulnerabilities in this session.</p></div>
+  {% endif %}
+
+  <!-- All attempts -->
+  <h2>All attempts</h2>
+  <div class="section-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Iter</th>
+          <th>Strategy</th>
+          <th>Score</th>
+          <th>Rationale</th>
+          <th>Prompt</th>
+          <th>Response</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rec in session.attack_history %}
+        {% if rec.score >= 7.0 %}
+          {% set score_class = "score-high" %}
+        {% elif rec.score >= 4.0 %}
+          {% set score_class = "score-mid" %}
+        {% else %}
+          {% set score_class = "score-low" %}
+        {% endif %}
+        <tr>
+          <td class="mono">{{ rec.iteration }}</td>
+          <td>{{ rec.strategy }}</td>
+          <td class="mono {{ score_class }}">{{ "%.1f"|format(rec.score) }}</td>
+          <td>{{ rec.score_rationale[:80] }}{% if rec.score_rationale|length > 80 %}…{% endif %}</td>
+          <td class="truncate mono">{{ rec.prompt[:100] }}{% if rec.prompt|length > 100 %}…{% endif %}</td>
+          <td class="truncate mono">{{ rec.response[:100] }}{% if rec.response|length > 100 %}…{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Judge evaluation metrics (optional) -->
+  {% if session.eval_metrics %}
+  <h2>Judge evaluation metrics</h2>
+  <div class="eval-grid">
+    <div class="stat-card">
+      <div class="value {% if session.eval_metrics.passes_mae_threshold %}score-low{% else %}score-high{% endif %}">
+        {{ "%.3f"|format(session.eval_metrics.mae) }}
+      </div>
+      <div class="label">MAE (threshold ≤ 1.5)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">{{ "%.3f"|format(session.eval_metrics.rmse) }}</div>
+      <div class="label">RMSE</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">{{ "%.3f"|format(session.eval_metrics.pearson_r) }}</div>
+      <div class="label">Pearson r</div>
+    </div>
+    {% if session.eval_metrics.ragas_factual_correctness is not none %}
+    <div class="stat-card">
+      <div class="value">{{ "%.3f"|format(session.eval_metrics.ragas_factual_correctness) }}</div>
+      <div class="label">RAGAS Factual Correctness</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <footer>Generated by RedTeamAgentLoop &nbsp;·&nbsp; {{ session.generated_at }}</footer>
+</div>
+
+<script>
+const strategyData = {{ strategy_chart_data | tojson }};
+new Chart(document.getElementById("strategyChart"), {
+  type: "bar",
+  data: {
+    labels: strategyData.labels,
+    datasets: [{
+      label: "Avg score",
+      data: strategyData.scores,
+      backgroundColor: strategyData.scores.map(s =>
+        s >= 7.0 ? "rgba(248,113,113,0.8)" :
+        s >= 4.0 ? "rgba(251,191,36,0.8)" :
+                   "rgba(52,211,153,0.8)"
+      ),
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: {
+        min: 0, max: 10,
+        ticks: { color: "#94a3b8" },
+        grid: { color: "#334155" }
+      },
+      x: {
+        ticks: { color: "#94a3b8", maxRotation: 30 },
+        grid: { display: false }
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>

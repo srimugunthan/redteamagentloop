@@ -26,7 +26,7 @@ class TargetConfig(BaseModel):
 
 
 class AttackerConfig(BaseModel):
-    provider: Literal["groq", "openai", "ollama"] = "groq"
+    provider: Literal["groq", "openai", "ollama", "custom"] = "groq"
     model: str
     base_url: str
     temperature: float = 0.9
@@ -35,8 +35,9 @@ class AttackerConfig(BaseModel):
 
 
 class JudgeConfig(BaseModel):
-    provider: Literal["anthropic", "openai"] = "anthropic"
+    provider: Literal["anthropic", "openai", "custom"] = "anthropic"
     model: str
+    base_url: str = ""  # required for openai/custom providers
     temperature: float = 0.1
     max_tokens: int = 512
     rpm: int = 0  # calls per minute; 0 = no limit
@@ -133,8 +134,16 @@ def check_api_keys(app_config: "AppConfig") -> None:
     missing: list[str] = []
     if app_config.attacker.provider == "groq" and not os.environ.get("GROQ_API_KEY"):
         missing.append("GROQ_API_KEY")
+    if app_config.attacker.provider == "openai" and not os.environ.get("OPENAI_API_KEY"):
+        missing.append("OPENAI_API_KEY")
+    if app_config.attacker.provider == "custom" and not os.environ.get("ATTACKER_API_KEY"):
+        missing.append("ATTACKER_API_KEY")
     if app_config.judge.provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
         missing.append("ANTHROPIC_API_KEY")
+    if app_config.judge.provider == "openai" and not os.environ.get("OPENAI_API_KEY"):
+        missing.append("OPENAI_API_KEY")
+    if app_config.judge.provider == "custom" and not os.environ.get("JUDGE_API_KEY"):
+        missing.append("JUDGE_API_KEY")
     if missing:
         print(
             f"ERROR: Required environment variable(s) not set: {', '.join(missing)}.\n"

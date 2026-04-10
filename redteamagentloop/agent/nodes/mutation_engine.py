@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
-import os
 
 if TYPE_CHECKING:
     from redteamagentloop.agent.state import RedTeamState
@@ -76,14 +74,8 @@ async def mutation_engine_node(state: "RedTeamState", config: RunnableConfig) ->
 
     attacker_llm = cfg.get("attacker_llm")
     if attacker_llm is None:
-        ac = app_config.attacker
-        attacker_llm = ChatOpenAI(
-            model=ac.model,
-            base_url=ac.base_url,
-            api_key=os.environ["GROQ_API_KEY"],
-            temperature=ac.temperature,
-            max_tokens=ac.max_tokens,
-        )
+        from redteamagentloop.llm_factory import build_attacker_llm
+        attacker_llm = build_attacker_llm(app_config)
 
     batch_size = app_config.loop.mutation_batch_size if app_config else 3
     tactics = _select_tactics(state["session_id"], batch_size)

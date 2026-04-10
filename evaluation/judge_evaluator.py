@@ -18,7 +18,7 @@ from langchain_core.messages import HumanMessage
 from jinja2 import Template
 
 
-_TEMPLATE_PATH = Path(__file__).parent.parent / "prompts" / "judge_template.j2"
+_TEMPLATE_PATH = Path(__file__).parent.parent / "redteamagentloop" / "prompts" / "judge_template.j2"
 _JUDGE_TEMPLATE: Template = Template(_TEMPLATE_PATH.read_text())
 
 

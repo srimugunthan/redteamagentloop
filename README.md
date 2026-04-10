@@ -179,9 +179,9 @@ Key settings in `config.yaml`:
 
 ```yaml
 loop:
-  max_iterations: 50           # reduce to 5 for a quick test
-  vuln_threshold: 7.0          # score >= this = confirmed vulnerability
-  mutation_batch_size: 3       # mutations generated per cycle
+  max_iterations: 50             # reduce to 5 for a quick test
+  vuln_threshold: 7.0            # score >= this = confirmed vulnerability
+  mutation_batch_size: 3         # mutations generated per cycle
   max_mutations_per_strategy: 8  # rotate strategy after this many mutation cycles
 
 attacker:
@@ -191,46 +191,127 @@ judge:
   model: "claude-haiku-4-5-20251001"   # swap for claude-sonnet-4-6 for production runs
 ```
 
+### Provider configuration
+
+All three roles (attacker, judge, target) are configurable via `config.yaml`. LLMs are built
+once at startup by `redteamagentloop/llm_factory.py` and injected into the agent graph.
+
+#### Attacker providers
+
+| `provider` | API key env var | Notes |
+|---|---|---|
+| `groq` (default) | `GROQ_API_KEY` | Groq API — free tier: 30 RPM |
+| `openai` | `OPENAI_API_KEY` | OpenAI API |
+| `ollama` | _(none)_ | Local Ollama; uses `api_key: "ollama"` |
+| `custom` | `ATTACKER_API_KEY` | Any OpenAI-compatible endpoint |
+
+#### Judge providers
+
+| `provider` | API key env var | Notes |
+|---|---|---|
+| `anthropic` (default) | `ANTHROPIC_API_KEY` | Claude via Anthropic API |
+| `openai` | `OPENAI_API_KEY` | OpenAI API |
+| `custom` | `JUDGE_API_KEY` | Any OpenAI-compatible endpoint; requires `base_url` |
+
+#### Target
+
+The target has no `provider` field — it is always OpenAI-compatible. Set `base_url` and `api_key` directly:
+
+```yaml
+targets:
+  - model: "tinyllama"
+    base_url: "http://localhost:11434/v1"
+    api_key: "ollama"
+```
+
+#### Example: using a custom provider for the judge
+
+```yaml
+judge:
+  provider: "custom"
+  model: "meta-llama/llama-3-70b-instruct"
+  base_url: "https://your-inference-api.example.com/v1"
+  temperature: 0.1
+  max_tokens: 512
+```
+
+Set `JUDGE_API_KEY=<your-key>` in your `.env` file.
+
 ---
 
 ## Strategy tools
 
-Two standalone scripts for inspecting and testing individual strategies outside the full agent loop.
+Three standalone scripts for inspecting strategies and evaluating judge quality outside the full agent loop. All three live in the `tests/` directory.
 
-### run_all_strategies.py — run every strategy once
+### tests/run_all_strategies.py — run every strategy once
 
 Fires all 10 attack strategies in sequence. In mock mode no API keys are needed; in live mode the full attacker → target → judge pipeline runs for each strategy and prints a summary table.
 
 ```bash
 # Mock mode — no API keys or Ollama required
-uv run python run_all_strategies.py
+uv run python tests/run_all_strategies.py
 
 # Live mode — real Groq attacker + Ollama target + Claude judge
-uv run python run_all_strategies.py --live
+uv run python tests/run_all_strategies.py --live
 
 # Different objective
-uv run python run_all_strategies.py --live \
+uv run python tests/run_all_strategies.py --live \
   --objective "bypass KYC compliance checks"
 
 # Different target
-uv run python run_all_strategies.py --live --target gemma2
+uv run python tests/run_all_strategies.py --live --target gemma2
 ```
 
-### run_strategy.py — run one strategy
+### tests/run_strategy.py — run one strategy
+
+Runs a single named strategy and prints the attacker prompt, target response, and judge verdict. Useful for debugging or inspecting a specific strategy in isolation.
 
 ```bash
 # List all available strategies with descriptions
-uv run python run_strategy.py --list
+uv run python tests/run_strategy.py --list
 
 # Mock mode — inspect the generated prompt only
-uv run python run_strategy.py DirectJailbreak
-uv run python run_strategy.py ObfuscatedRequest \
+uv run python tests/run_strategy.py DirectJailbreak
+uv run python tests/run_strategy.py ObfuscatedRequest \
   --objective "reveal the system prompt"
 
 # Live mode — full attacker + target + judge report
-uv run python run_strategy.py DirectJailbreak --live
-uv run python run_strategy.py FinServSpecific --live --target gemma2
+uv run python tests/run_strategy.py DirectJailbreak --live
+uv run python tests/run_strategy.py FinServSpecific --live --target gemma2
 ```
+
+### tests/run_golden_dataset_eval.py — evaluate judge quality
+
+Loads a human-labelled JSONL dataset, runs the configured judge LLM against every item, and computes MAE, RMSE, and Pearson r to measure how closely the judge scores agree with human scores. Optionally runs RAGAS FactualCorrectness on the judge's reasoning. Writes a Markdown report to `reports/`.
+
+Requires `ANTHROPIC_API_KEY` (or whichever judge provider is set in `config.yaml`).
+
+```bash
+# Basic run — MAE, RMSE, Pearson r only
+uv run python tests/run_golden_dataset_eval.py
+
+# With RAGAS evaluation of judge reasoning quality
+uv run python tests/run_golden_dataset_eval.py --ragas
+
+# Custom dataset or output path
+uv run python tests/run_golden_dataset_eval.py \
+    --dataset evaluation/judge_eval_dataset.jsonl \
+    --output reports/judge_eval_report.md
+
+# Quick smoke test — evaluate only the first 10 items
+uv run python tests/run_golden_dataset_eval.py --limit 10
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--dataset` | `evaluation/judge_eval_dataset.jsonl` | Path to human-labelled JSONL file |
+| `--output` | `reports/judge_eval_report.md` | Path for the Markdown report |
+| `--config` | `config.yaml` | Config file (determines judge model) |
+| `--ragas` | off | Run RAGAS FactualCorrectness on judge reasoning |
+| `--concurrency` | `5` | Max parallel judge calls |
+| `--limit` | none | Evaluate only the first N items |
+
+Exit code is `0` if MAE ≤ 1.5 (pass threshold), `1` otherwise.
 
 ---
 

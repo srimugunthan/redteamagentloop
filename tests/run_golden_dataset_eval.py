@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 from pathlib import Path
 
@@ -85,24 +84,16 @@ async def main() -> int:
         print(f"ERROR: dataset not found: {args.dataset}", file=sys.stderr)
         return 1
 
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not anthropic_key:
-        print("ERROR: ANTHROPIC_API_KEY not set.", file=sys.stderr)
-        return 1
-
     # Load config for judge model details
-    from redteamagentloop.config import load_config
+    from redteamagentloop.config import check_api_keys, load_config
+    from redteamagentloop.llm_factory import build_judge_llm
     app_config = load_config(args.config)
 
-    # Build judge LLM
-    from langchain_anthropic import ChatAnthropic
-    jc = app_config.judge
-    judge_llm = ChatAnthropic(
-        model=jc.model,
-        temperature=jc.temperature,
-        max_tokens=jc.max_tokens,
-        api_key=anthropic_key,
-    )
+    # Validate required API keys for the configured judge provider.
+    check_api_keys(app_config)
+
+    # Build judge LLM via factory (respects provider setting in config.yaml)
+    judge_llm = build_judge_llm(app_config)
 
     # Load dataset
     from evaluation.judge_evaluator import JudgeEvaluator, make_judge_fn
@@ -112,7 +103,7 @@ async def main() -> int:
         items = items[: args.limit]
 
     print(f"Loaded {len(items)} items from {args.dataset}")
-    print(f"Judge model: {jc.model}")
+    print(f"Judge model: {app_config.judge.model}")
 
     # Run evaluation
     judge_fn = make_judge_fn(judge_llm)

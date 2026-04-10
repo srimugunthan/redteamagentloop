@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import TYPE_CHECKING
 
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
 
 from redteamagentloop.agent.strategies import STRATEGY_REGISTRY, AttackStrategy
 from redteamagentloop.guardrails import check_prompt
@@ -49,17 +47,11 @@ async def attacker_node(state: "RedTeamState", config: RunnableConfig) -> dict:
 
     log = get_session_logger(state["session_id"])
 
-    # LLM — use injected override (tests) or build from config.
+    # LLM — injected via configurable by cli.py (or overridden in tests).
     attacker_llm = cfg.get("attacker_llm")
     if attacker_llm is None:
-        ac = app_config.attacker
-        attacker_llm = ChatOpenAI(
-            model=ac.model,
-            base_url=ac.base_url,
-            api_key=os.environ["GROQ_API_KEY"],
-            temperature=ac.temperature,
-            max_tokens=ac.max_tokens,
-        )
+        from redteamagentloop.llm_factory import build_attacker_llm
+        attacker_llm = build_attacker_llm(app_config)
 
     # Strategy selection — rotate away from failed strategies.
     current = state["current_strategy"]

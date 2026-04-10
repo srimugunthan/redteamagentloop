@@ -59,14 +59,8 @@ async def target_caller_node(state: "RedTeamState", config: RunnableConfig) -> d
 
     target_llm = cfg.get("target_llm")
     if target_llm is None:
-        tc = app_config.targets[0]
-        target_llm = ChatOpenAI(
-            model=tc.model,
-            base_url=tc.base_url,
-            api_key=tc.api_key,
-            timeout=tc.timeout_seconds,
-            temperature=0.0,
-        )
+        from redteamagentloop.llm_factory import build_target_llm
+        target_llm = build_target_llm(app_config.targets[0])
 
     messages = [
         SystemMessage(content=state["target_system_prompt"]),

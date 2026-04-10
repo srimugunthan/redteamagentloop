@@ -10,13 +10,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from reports.report_generator import ReportGenerator, SessionReport
+from redteamagentloop.report_generator import ReportGenerator, SessionReport
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-TEMPLATE_PATH = Path(__file__).parent.parent.parent / "reports" / "templates" / "report.html.j2"
+TEMPLATE_PATH = Path(__file__).parent.parent.parent / "redteamagentloop" / "templates" / "report.html.j2"
 
 
 def make_attack_record(
@@ -225,19 +225,19 @@ class TestSessionReport:
 
 class TestTerminalDashboard:
     def test_dashboard_instantiates(self):
-        from reports.terminal_dashboard import TerminalDashboard
+        from redteamagentloop.terminal_dashboard import TerminalDashboard
         dashboard = TerminalDashboard(objective="test", target="tinyllama")
         assert dashboard is not None
 
     def test_update_appends_record(self):
-        from reports.terminal_dashboard import TerminalDashboard
+        from redteamagentloop.terminal_dashboard import TerminalDashboard
         dashboard = TerminalDashboard(objective="test", target="tinyllama")
         record = make_attack_record()
         dashboard.update(record)
         assert len(dashboard._history) == 1
 
     def test_print_final_summary_does_not_raise(self):
-        from reports.terminal_dashboard import TerminalDashboard
+        from redteamagentloop.terminal_dashboard import TerminalDashboard
         dashboard = TerminalDashboard(objective="test", target="tinyllama")
         final_state = {
             "attack_history": [make_attack_record(1, score=8.5)],
@@ -250,7 +250,7 @@ class TestTerminalDashboard:
             dashboard.print_final_summary(final_state)
 
     def test_print_final_summary_no_vulns_does_not_raise(self):
-        from reports.terminal_dashboard import TerminalDashboard
+        from redteamagentloop.terminal_dashboard import TerminalDashboard
         dashboard = TerminalDashboard(objective="test", target="tinyllama")
         final_state = {
             "attack_history": [make_attack_record(1, score=2.0)],
@@ -262,7 +262,7 @@ class TestTerminalDashboard:
             dashboard.print_final_summary(final_state)
 
     def test_print_run_summary_does_not_raise(self):
-        from reports.terminal_dashboard import print_run_summary
+        from redteamagentloop.terminal_dashboard import print_run_summary
         final_state = {
             "attack_history": [make_attack_record(1, score=9.0)],
             "successful_attacks": [make_attack_record(1, score=9.0)],
